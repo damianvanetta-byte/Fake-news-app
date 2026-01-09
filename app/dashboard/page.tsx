@@ -22,55 +22,57 @@ export default function DashboardPage() {
       const end = str.lastIndexOf('}');
       if (start !== -1 && end !== -1) {
         str = str.substring(start, end + 1);
+        return JSON.parse(str);
       }
-      return JSON.parse(str);
+      return null;
     } catch (e) {
+      console.error("Error parseando:", e);
       return null;
     }
   };
-  // NUEVA FUNCIÓN: Busca la última verificación al entrar o refrescar
+
+  // PLAN B: Si el Realtime falla, esto revisa la DB cada 3 segundos
   useEffect(() => {
-    const loadLastResult = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    let interval: any;
+    if (loading && currentId) {
+      interval = setInterval(async () => {
+        const { data } = await supabase
+          .from('verifications')
+          .select('*')
+          .eq('id', currentId)
+          .single();
 
-      const { data, error } = await supabase
-        .from('verifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false }) // Trae la más reciente
-        .limit(1)
-        .single();
+        if (data?.status === 'completed') {
+          setResult(parseVerdict(data.verdict));
+          setLoading(false);
+          setCurrentId(null);
+          clearInterval(interval);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [loading, currentId]);
 
-      if (data && data.status === 'completed' && data.verdict) {
-        const parsed = parseVerdict(data.verdict);
-        setResult(parsed);
-      }
-    };
-
-    loadLastResult();
-  }, [supabase]);
+  // PLAN A: Realtime (Aviso instantáneo)
   useEffect(() => {
     if (!currentId) return;
     const channel = supabase
-      .channel(`verification_${currentId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'verifications', filter: `id=eq.${currentId}` },
-        (payload) => {
-          if (payload.new.status === 'completed' && payload.new.verdict) {
-            const data = parseVerdict(payload.new.verdict);
-            if (data) {
-              setResult(data);
-              setLoading(false);
-              setCurrentId(null);
-            }
-          }
+      .channel(`v_${currentId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'verifications',
+        filter: `id=eq.${currentId}`
+      }, (payload) => {
+        if (payload.new.status === 'completed') {
+          setResult(parseVerdict(payload.new.verdict));
+          setLoading(false);
+          setCurrentId(null);
         }
-      )
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentId, supabase]);
+  }, [currentId]);
 
   const handleVerify = async () => {
     if (!url) return;
@@ -79,11 +81,13 @@ export default function DashboardPage() {
     setResult(null);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Inicia sesión primero");
+      if (!user) throw new Error("Inicia sesión");
+
       const { data, error: insError } = await supabase
         .from('verifications')
         .insert([{ url, user_id: user.id, status: 'pending' }])
         .select().single();
+
       if (insError) throw insError;
       setCurrentId(data.id);
       await triggerN8n(url, data.id);
@@ -94,16 +98,16 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl min-h-screen">
+    <div className="container mx-auto px-4 py-8 max-w-4xl min-h-screen text-slate-900">
       <div className="flex items-center gap-2 mb-8">
         <Shield className="text-blue-600 w-8 h-8" />
-        <h1 className="text-3xl font-black tracking-tighter">TRUTHGUARD</h1>
+        <h1 className="text-3xl font-black tracking-tighter italic">TRUTHGUARD</h1>
       </div>
 
       <div className="flex gap-2 mb-12 bg-white p-2 rounded-2xl border shadow-xl">
         <input
-          className="flex-1 px-4 py-3 outline-none text-lg bg-transparent text-black"
-          placeholder="Pega el link de la noticia aquí..."
+          className="flex-1 px-4 py-3 outline-none text-lg bg-transparent"
+          placeholder="Pega el link de la noticia..."
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
@@ -118,9 +122,9 @@ export default function DashboardPage() {
       </div>
 
       {loading && (
-        <div className="text-center py-20 bg-blue-50 border-2 border-dashed border-blue-200 rounded-3xl">
+        <div className="text-center py-20 bg-blue-50/50 border-2 border-dashed border-blue-200 rounded-3xl">
           <Loader2 className="animate-spin mx-auto mb-4 h-12 w-12 text-blue-500" />
-          <p className="text-xl font-bold text-blue-900">Cruzando información...</p>
+          <p className="text-xl font-bold text-blue-900">Consultando fuentes mundiales...</p>
         </div>
       )}
 
@@ -132,28 +136,26 @@ export default function DashboardPage() {
               }`}>
               <Shield size={48} color="white" />
             </div>
-            <h2 className="text-4xl font-black mb-4 text-black">
-              Veredicto: <span className={
-                result.color === 'verde' ? 'text-green-600' :
-                  result.color === 'rojo' ? 'text-red-600' : 'text-yellow-600'
-              }>{(result.color || "").toUpperCase()}</span>
-            </h2>
-            <p className="text-slate-600 text-xl italic">"{result.resumen}"</p>
+            <h2 className="text-4xl font-black mb-4">Veredicto: <span className={
+              result.color === 'verde' ? 'text-green-600' :
+                result.color === 'rojo' ? 'text-red-600' : 'text-yellow-600'
+            }>{(result.color || "").toUpperCase()}</span></h2>
+            <p className="text-slate-600 text-xl leading-relaxed italic">"{result.resumen}"</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-slate-50 p-6 rounded-2xl border">
-              <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Claims Detectados</h3>
+              <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Claims</h3>
               <ul className="space-y-3">
                 {result.claims?.map((c: any, i: number) => (
-                  <li key={i} className="text-sm bg-white p-4 rounded-xl border shadow-sm text-black">
+                  <li key={i} className="text-sm bg-white p-4 rounded-xl border shadow-sm">
                     {typeof c === 'string' ? c : c.texto}
                   </li>
                 ))}
               </ul>
             </div>
             <div className="bg-slate-50 p-6 rounded-2xl border">
-              <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Evidencia Digital</h3>
+              <h3 className="font-bold text-slate-400 uppercase text-xs mb-4">Evidencias</h3>
               <div className="space-y-3">
                 {result.evidencia?.map((e: any, i: number) => (
                   <a key={i} href={e.url} target="_blank" className="block bg-white p-4 rounded-xl border hover:border-blue-500 transition-all">
@@ -167,7 +169,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {error && <div className="p-4 bg-red-50 text-red-600 rounded-xl mt-6 text-center font-bold">⚠️ {error}</div>}
+      {error && <div className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-xl mt-6 text-center font-bold">⚠️ {error}</div>}
     </div>
   )
 }
