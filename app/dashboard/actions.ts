@@ -2,7 +2,7 @@
 
 export async function triggerN8n(url: string, verificationId: string) {
   try {
-    const response = await fetch('http://localhost:5678/webhook-test/verificar-articulo', {
+    const response = await fetch('https://n8n.srv1259210.hstgr.cloud/webhook/verificar-articulo', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
