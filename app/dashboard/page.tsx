@@ -28,7 +28,28 @@ export default function DashboardPage() {
       return null;
     }
   };
+  // NUEVA FUNCIÓN: Busca la última verificación al entrar o refrescar
+  useEffect(() => {
+    const loadLastResult = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
+      const { data, error } = await supabase
+        .from('verifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false }) // Trae la más reciente
+        .limit(1)
+        .single();
+
+      if (data && data.status === 'completed' && data.verdict) {
+        const parsed = parseVerdict(data.verdict);
+        setResult(parsed);
+      }
+    };
+
+    loadLastResult();
+  }, [supabase]);
   useEffect(() => {
     if (!currentId) return;
     const channel = supabase
@@ -78,15 +99,15 @@ export default function DashboardPage() {
         <Shield className="text-blue-600 w-8 h-8" />
         <h1 className="text-3xl font-black tracking-tighter">TRUTHGUARD</h1>
       </div>
-      
+
       <div className="flex gap-2 mb-12 bg-white p-2 rounded-2xl border shadow-xl">
-        <input 
+        <input
           className="flex-1 px-4 py-3 outline-none text-lg bg-transparent text-black"
           placeholder="Pega el link de la noticia aquí..."
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <button 
+        <button
           onClick={handleVerify}
           disabled={loading}
           className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 flex items-center gap-2"
@@ -106,16 +127,15 @@ export default function DashboardPage() {
       {result && (
         <div className="space-y-6">
           <div className="bg-white p-10 rounded-3xl border shadow-2xl text-center">
-            <div className={`w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center ${
-              result.color === 'verde' ? 'bg-green-500' : 
-              result.color === 'rojo' ? 'bg-red-500' : 'bg-yellow-500'
-            }`}>
+            <div className={`w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center ${result.color === 'verde' ? 'bg-green-500' :
+                result.color === 'rojo' ? 'bg-red-500' : 'bg-yellow-500'
+              }`}>
               <Shield size={48} color="white" />
             </div>
             <h2 className="text-4xl font-black mb-4 text-black">
               Veredicto: <span className={
-                result.color === 'verde' ? 'text-green-600' : 
-                result.color === 'rojo' ? 'text-red-600' : 'text-yellow-600'
+                result.color === 'verde' ? 'text-green-600' :
+                  result.color === 'rojo' ? 'text-red-600' : 'text-yellow-600'
               }>{(result.color || "").toUpperCase()}</span>
             </h2>
             <p className="text-slate-600 text-xl italic">"{result.resumen}"</p>
@@ -146,7 +166,7 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-      
+
       {error && <div className="p-4 bg-red-50 text-red-600 rounded-xl mt-6 text-center font-bold">⚠️ {error}</div>}
     </div>
   )
