@@ -6,6 +6,7 @@ import { Shield, CheckCircle, AlertTriangle, Search, Loader2, ExternalLink } fro
 import { triggerN8n } from "./actions"
 
 export default function DashboardPage() {
+  const [contentType, setContentType] = useState<'url' | 'text'>('url')
   const [url, setUrl] = useState("")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<any>(null)
@@ -83,14 +84,18 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Inicia sesión");
 
+      const insertData = contentType === 'url'
+        ? { url, user_id: user.id, status: 'pending', content_type: 'url' }
+        : { text_content: url, user_id: user.id, status: 'pending', content_type: 'text', url: null };
+
       const { data, error: insError } = await supabase
         .from('verifications')
-        .insert([{ url, user_id: user.id, status: 'pending' }])
+        .insert([insertData])
         .select().single();
 
       if (insError) throw insError;
       setCurrentId(data.id);
-      await triggerN8n(url, data.id);
+      await triggerN8n(contentType, url, data.id);
     } catch (err: any) {
       setError(err.message);
       setLoading(false);
@@ -104,17 +109,51 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-black tracking-tighter italic">TRUTHGUARD</h1>
       </div>
 
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => setContentType('url')}
+          className={`px-6 py-2 rounded-xl font-bold transition-all ${
+            contentType === 'url'
+              ? 'bg-blue-600 text-white'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          Verificar URL
+        </button>
+        <button
+          onClick={() => setContentType('text')}
+          className={`px-6 py-2 rounded-xl font-bold transition-all ${
+            contentType === 'text'
+              ? 'bg-blue-600 text-white'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          Verificar Texto
+        </button>
+      </div>
+
       <div className="flex gap-2 mb-12 bg-white p-2 rounded-2xl border shadow-xl">
-        <input
-          className="flex-1 px-4 py-3 outline-none text-lg bg-transparent"
-          placeholder="Pega el link de la noticia..."
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
+        {contentType === 'url' ? (
+          <input
+            className="flex-1 px-4 py-3 outline-none text-lg bg-transparent"
+            placeholder="Pega el link de la noticia..."
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        ) : (
+          <textarea
+            className="flex-1 px-4 py-3 outline-none text-lg bg-transparent resize-none"
+            placeholder="Escribe la afirmación que quieres verificar..."
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            rows={6}
+            maxLength={1000}
+          />
+        )}
         <button
           onClick={handleVerify}
           disabled={loading}
-          className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 flex items-center gap-2"
+          className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 flex items-center gap-2 self-end"
         >
           {loading ? <Loader2 className="animate-spin" /> : <Search size={20} />}
           {loading ? "Analizando..." : "Verificar"}
@@ -132,7 +171,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
           <div className="bg-white p-10 rounded-3xl border shadow-2xl text-center">
             <div className={`w-24 h-24 rounded-full mx-auto mb-6 flex items-center justify-center ${result.color === 'verde' ? 'bg-green-500' :
-                result.color === 'rojo' ? 'bg-red-500' : 'bg-yellow-500'
+              result.color === 'rojo' ? 'bg-red-500' : 'bg-yellow-500'
               }`}>
               <Shield size={48} color="white" />
             </div>

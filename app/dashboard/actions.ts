@@ -1,6 +1,10 @@
 'use server'
 
-export async function triggerN8n(url: string, verificationId: string) {
+export async function triggerN8n(
+  contentType: 'url' | 'text',
+  content: string,
+  verificationId: string
+) {
   try {
     const response = await fetch('https://n8n.srv1259210.hstgr.cloud/webhook/verificar-articulo', {
       method: 'POST',
@@ -8,7 +12,9 @@ export async function triggerN8n(url: string, verificationId: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        url: url,
+        content_type: contentType,
+        url: contentType === 'url' ? content : null,
+        text_content: contentType === 'text' ? content : null,
         verification_id: verificationId,
       }),
     });
